@@ -282,6 +282,22 @@ export function createSeedState(
   };
 }
 
+export function createStarterState(
+  name: string,
+  email = "local@device",
+): AppState {
+  const seed = createSeedState(name, email);
+  return {
+    ...seed,
+    version: 2,
+    sessions: [],
+    activeSession: null,
+    bodyWeights: [],
+    cardio: [],
+    dismissedHints: [],
+  };
+}
+
 export const makeId = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 

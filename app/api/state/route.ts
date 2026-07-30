@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
-import { createSeedState } from "@/app/data";
 import { getDb } from "@/db";
 import { profiles, syncOperations, userStates } from "@/db/schema";
 
@@ -53,9 +52,7 @@ export async function GET() {
       .where(eq(userStates.ownerId, profile.id))
       .limit(1);
 
-    const state = stored
-      ? JSON.parse(stored.payload)
-      : createSeedState(profile.name, profile.email);
+    const state = stored ? JSON.parse(stored.payload) : null;
 
     return Response.json({
       state,

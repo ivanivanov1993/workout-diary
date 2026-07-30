@@ -129,6 +129,96 @@ h3 {
   background: var(--color-bg-canvas);
 }
 
+.onboarding-shell {
+  display: grid;
+  width: 100%;
+  min-height: 100svh;
+  padding:
+    max(24px, env(safe-area-inset-top)) 16px
+    max(24px, env(safe-area-inset-bottom));
+  place-items: center;
+}
+
+.onboarding-card {
+  width: min(100%, 448px);
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.onboarding-mark {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 24px;
+  place-items: center;
+  border-radius: 18px;
+  background: var(--color-yellow);
+  color: var(--color-text-primary);
+  font-size: 24px;
+  font-weight: 750;
+}
+
+.onboarding-card h1 {
+  margin: 6px 0 10px;
+  font-size: 30px;
+  line-height: 36px;
+}
+
+.onboarding-card > p {
+  margin-bottom: 24px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.onboarding-card .primary-button {
+  margin-top: 8px;
+}
+
+.onboarding-note {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.onboarding-note p {
+  margin: 0;
+}
+
+.onboarding-note strong,
+.onboarding-note small {
+  display: block;
+}
+
+.onboarding-note strong {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.onboarding-note small {
+  margin-top: 3px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.field-error {
+  display: block;
+  margin: -6px 4px 8px;
+  color: #b63e3a;
+  font-size: 12px;
+}
+
+.loading-card {
+  min-height: 300px;
+}
+
 .main-content {
   padding:
     max(18px, env(safe-area-inset-top)) 16px
@@ -1054,6 +1144,25 @@ h3 {
 .card {
   margin-bottom: 14px;
   padding: 16px;
+}
+
+.sync-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--color-mint-soft);
+}
+
+.sync-card h2 {
+  margin-top: 1px;
+}
+
+.sync-card p {
+  margin-bottom: 0;
+}
+
+.sync-promo-card .secondary-button {
+  margin-top: 14px;
 }
 
 .install-card h2,

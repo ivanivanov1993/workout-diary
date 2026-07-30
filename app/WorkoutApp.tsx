@@ -9,7 +9,7 @@ import {
 import {
   AppState,
   CardioEntry,
-  createSeedState,
+  createStarterState,
   formatDate,
   formatWeight,
   makeId,
@@ -44,7 +44,8 @@ type Props = {
 };
 
 const DB_NAME = "training-diary";
-const STATE_KEY = "latest-state";
+const LEGACY_STATE_KEY = "latest-state";
+const LOCAL_STATE_KEY = "latest-state:local";
 
 async function openLocalDb() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -63,21 +64,21 @@ async function openLocalDb() {
   });
 }
 
-async function cacheState(state: AppState) {
+async function cacheState(state: AppState, key: string) {
   const db = await openLocalDb();
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction("cache", "readwrite");
-    transaction.objectStore("cache").put(state, STATE_KEY);
+    transaction.objectStore("cache").put(state, key);
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
   db.close();
 }
 
-async function readCachedState() {
+async function readCachedState(key: string) {
   const db = await openLocalDb();
   const state = await new Promise<AppState | undefined>((resolve, reject) => {
-    const request = db.transaction("cache").objectStore("cache").get(STATE_KEY);
+    const request = db.transaction("cache").objectStore("cache").get(key);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -85,12 +86,17 @@ async function readCachedState() {
   return state;
 }
 
-async function queueState(state: AppState, operationId: string) {
+async function queueState(
+  state: AppState,
+  operationId: string,
+  scope: string,
+) {
   const db = await openLocalDb();
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction("queue", "readwrite");
     transaction.objectStore("queue").put({
       id: operationId,
+      scope,
       state,
       createdAt: Date.now(),
     });
@@ -100,11 +106,18 @@ async function queueState(state: AppState, operationId: string) {
   db.close();
 }
 
-async function clearQueue() {
+async function clearQueue(scope: string) {
   const db = await openLocalDb();
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction("queue", "readwrite");
-    transaction.objectStore("queue").clear();
+    const request = transaction.objectStore("queue").openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const queued = cursor.value as { scope?: string };
+      if (!queued.scope || queued.scope === scope) cursor.delete();
+      cursor.continue();
+    };
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
@@ -235,6 +248,84 @@ function EmptyState({
   );
 }
 
+function OnboardingScreen({
+  defaultName,
+  authenticated,
+  onComplete,
+}: {
+  defaultName: string;
+  authenticated: boolean;
+  onComplete: (name: string) => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [error, setError] = useState("");
+
+  return (
+    <main className="onboarding-shell">
+      <section className="onboarding-card">
+        <div className="onboarding-mark" aria-hidden="true">Ж</div>
+        <span className="eyebrow">Личный дневник тренировок</span>
+        <h1>Как к вам обращаться?</h1>
+        <p>
+          Имя появится в вашем дневнике. Результаты каждого человека хранятся
+          отдельно.
+        </p>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const normalized = name.trim();
+            if (!normalized) {
+              setError("Укажите имя");
+              return;
+            }
+            onComplete(normalized);
+          }}
+        >
+          <label className="form-field">
+            <span>Ваше имя</span>
+            <input
+              autoComplete="name"
+              autoFocus
+              maxLength={50}
+              placeholder="Например, Алексей"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (error) setError("");
+              }}
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? "name-error" : "storage-note"}
+            />
+          </label>
+          {error && (
+            <small className="field-error" id="name-error" role="alert">
+              {error}
+            </small>
+          )}
+          <button className="primary-button" type="submit">
+            Начать <span aria-hidden="true">→</span>
+          </button>
+        </form>
+        <div className="onboarding-note" id="storage-note">
+          <span className="status-check">✓</span>
+          <p>
+            <strong>
+              {authenticated
+                ? "Сохранение на телефоне и резервная копия"
+                : "Сохранение на этом телефоне"}
+            </strong>
+            <small>
+              {authenticated
+                ? "Данные доступны после входа и не смешиваются с чужими."
+                : "Войти для резервной копии можно позже в профиле."}
+            </small>
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function Chart({
   values,
   color,
@@ -337,7 +428,7 @@ function Chart({
 
 export default function WorkoutApp({ viewer }: Props) {
   const [state, setState] = useState<AppState>(() =>
-    createSeedState(viewer.name, viewer.email),
+    createStarterState(viewer.name, viewer.email),
   );
   const [view, setView] = useState<MainView>("home");
   const [overlay, setOverlay] = useState<Overlay>(null);
@@ -348,6 +439,7 @@ export default function WorkoutApp({ viewer }: Props) {
     typeof navigator === "undefined" || navigator.onLine ? "saved" : "offline",
   );
   const [hydrated, setHydrated] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
   const [period, setPeriod] = useState<"7" | "30" | "all">("30");
   const [selectedExercise, setSelectedExercise] = useState("bench");
   const [draftWeight, setDraftWeight] = useState("60");
@@ -356,6 +448,12 @@ export default function WorkoutApp({ viewer }: Props) {
   const [referenceNow] = useState(() => Date.now());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchDrag = useRef<{ templateId: string; index: number } | null>(null);
+  const storageScope = viewer.authenticated
+    ? `account:${viewer.email.toLowerCase()}`
+    : "local";
+  const cacheKey = viewer.authenticated
+    ? `latest-state:${storageScope}`
+    : LOCAL_STATE_KEY;
 
   const showNotice = useCallback((message: string) => {
     setNotice(message);
@@ -381,32 +479,54 @@ export default function WorkoutApp({ viewer }: Props) {
         });
         if (response.status === 401 && !viewer.authenticated) {
           setSyncStatus("saved");
-          await clearQueue();
+          await clearQueue(storageScope);
           return;
         }
         if (!response.ok) throw new Error("sync failed");
-        await clearQueue();
+        await clearQueue(storageScope);
         setSyncStatus("saved");
       } catch {
         setSyncStatus(navigator.onLine ? "error" : "offline");
       }
     },
-    [viewer.authenticated],
+    [storageScope, viewer.authenticated],
   );
 
   useEffect(() => {
     let cancelled = false;
     const hydrate = async () => {
       try {
-        const cached = await readCachedState();
-        if (!cancelled && cached) setState(cached);
-        const response = await fetch("/api/state");
-        if (response.ok) {
-          const data = (await response.json()) as { state?: AppState };
-          if (!cancelled && data.state) {
-            setState(data.state);
-            await cacheState(data.state);
+        let cached = await readCachedState(cacheKey);
+        if (!cached && viewer.authenticated) {
+          cached = await readCachedState(LOCAL_STATE_KEY);
+        }
+        if (!cached) cached = await readCachedState(LEGACY_STATE_KEY);
+
+        let nextState = cached;
+        if (viewer.authenticated) {
+          const response = await fetch("/api/state");
+          if (response.ok) {
+            const data = (await response.json()) as {
+              state?: AppState | null;
+            };
+            if (data.state) {
+              nextState = data.state;
+            } else if (nextState) {
+              nextState = {
+                ...nextState,
+                profile: {
+                  ...nextState.profile,
+                  email: viewer.email.toLowerCase(),
+                },
+              };
+            }
           }
+        }
+
+        if (!cancelled && nextState) {
+          setState(nextState);
+          setProfileReady(true);
+          await cacheState(nextState, cacheKey);
         }
       } catch {
         setSyncStatus(navigator.onLine ? "error" : "offline");
@@ -418,24 +538,40 @@ export default function WorkoutApp({ viewer }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [cacheKey, viewer.authenticated, viewer.email]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !profileReady) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const operationId = makeId("op");
-    cacheState(state).catch(() => setSyncStatus("error"));
-    queueState(state, operationId).catch(() => setSyncStatus("error"));
-    saveTimer.current = setTimeout(() => syncNow(state, operationId), 500);
+    cacheState(state, cacheKey).catch(() => setSyncStatus("error"));
+    if (viewer.authenticated) {
+      queueState(state, operationId, storageScope).catch(() =>
+        setSyncStatus("error"),
+      );
+      saveTimer.current = setTimeout(() => syncNow(state, operationId), 500);
+    }
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [state, hydrated, syncNow]);
+  }, [
+    cacheKey,
+    hydrated,
+    profileReady,
+    state,
+    storageScope,
+    syncNow,
+    viewer.authenticated,
+  ]);
 
   useEffect(() => {
     const online = () => {
-      setSyncStatus("saving");
-      syncNow(state, makeId("op-online"));
+      if (viewer.authenticated && profileReady) {
+        setSyncStatus("saving");
+        syncNow(state, makeId("op-online"));
+      } else {
+        setSyncStatus("saved");
+      }
     };
     const offline = () => setSyncStatus("offline");
     window.addEventListener("online", online);
@@ -444,13 +580,39 @@ export default function WorkoutApp({ viewer }: Props) {
       window.removeEventListener("online", online);
       window.removeEventListener("offline", offline);
     };
-  }, [state, syncNow]);
+  }, [profileReady, state, syncNow, viewer.authenticated]);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => undefined);
     }
   }, []);
+
+  if (!hydrated) {
+    return (
+      <main className="onboarding-shell" aria-busy="true">
+        <section className="onboarding-card loading-card">
+          <div className="onboarding-mark" aria-hidden="true">Ж</div>
+          <span className="eyebrow">Личный дневник тренировок</span>
+          <h1>Загружаем ваши данные…</h1>
+          <p>Это займёт всего несколько секунд.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!profileReady) {
+    return (
+      <OnboardingScreen
+        authenticated={viewer.authenticated}
+        defaultName={viewer.name}
+        onComplete={(name) => {
+          setState(createStarterState(name, viewer.email));
+          setProfileReady(true);
+        }}
+      />
+    );
+  }
 
   const activeTemplate = state.programs
     .find((program) => program.active)
@@ -1693,14 +1855,45 @@ export default function WorkoutApp({ viewer }: Props) {
             <strong>{state.profile.name}</strong>
           </div>
           <div className="profile-line">
-            <span>Вход</span>
-            <strong>{state.profile.email}</strong>
+            <span>Хранение</span>
+            <strong>
+              {viewer.authenticated
+                ? "Телефон + резервная копия"
+                : "Только этот телефон"}
+            </strong>
           </div>
           <div className="profile-line">
             <span>Единицы</span>
             <strong>кг · км</strong>
           </div>
         </section>
+        {viewer.authenticated ? (
+          <section className="card sync-card">
+            <span className="status-check">✓</span>
+            <div>
+              <h2>Резервная копия включена</h2>
+              <p>
+                Данные привязаны к {state.profile.email} и доступны после
+                входа на другом устройстве.
+              </p>
+            </div>
+          </section>
+        ) : (
+          <section className="card sync-promo-card">
+            <MetricIcon tone="blue">↻</MetricIcon>
+            <h2>Сохранить резервную копию</h2>
+            <p>
+              Необязательно. Войдите через ChatGPT, чтобы восстановить дневник
+              на другом устройстве. Текущие данные перенесутся автоматически.
+            </p>
+            <a
+              className="secondary-button"
+              href="/signin-with-chatgpt?return_to=/"
+            >
+              Войти через ChatGPT
+            </a>
+          </section>
+        )}
         <section className="card install-card">
           <MetricIcon tone="yellow">↗</MetricIcon>
           <h2>Добавить на экран «Домой»</h2>

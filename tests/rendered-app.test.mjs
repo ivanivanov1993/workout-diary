@@ -12,6 +12,8 @@ test("deployment build contains the mobile application worker and metadata", asy
     readFile(new URL("dist/.openai/hosting.json", root), "utf8"),
   ]);
   assert.match(page, /Начать тренировку/);
+  assert.match(page, /Как к вам обращаться\?/);
+  assert.match(page, /Сохранить резервную копию/);
   assert.match(page, /Удалить упражнение/);
   assert.doesNotMatch(page, /Только просмотр|Анна|partnerMode/);
   assert.match(layout, /Дневник тренировок/);

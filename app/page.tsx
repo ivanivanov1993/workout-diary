@@ -8,8 +8,8 @@ export default async function Home() {
   return (
     <WorkoutApp
       viewer={{
-        name: user?.fullName ?? user?.displayName ?? "Дмитрий",
-        email: user?.email ?? "demo@local",
+        name: user?.fullName ?? user?.displayName ?? "",
+        email: user?.email ?? "local@device",
         authenticated: Boolean(user),
       }}
     />
