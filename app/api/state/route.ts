@@ -1,9 +1,8 @@
-import { and, eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { createSeedState } from "@/app/data";
 import { getDb } from "@/db";
-import { partnerships, profiles, syncOperations, userStates } from "@/db/schema";
-import { canAccessState } from "@/lib/access.mjs";
+import { profiles, syncOperations, userStates } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -40,75 +39,27 @@ async function currentProfile() {
   };
 }
 
-async function partnerIdFor(ownerId: string) {
-  const db = getDb();
-  const [link] = await db
-    .select()
-    .from(partnerships)
-    .where(
-      and(
-        eq(partnerships.status, "active"),
-        or(
-          eq(partnerships.inviterId, ownerId),
-          eq(partnerships.partnerId, ownerId),
-        ),
-      ),
-    )
-    .limit(1);
-  if (!link) return null;
-  return link.inviterId === ownerId ? link.partnerId : link.inviterId;
-}
-
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const profile = await currentProfile();
     if (!profile) {
       return Response.json({ error: "Требуется вход" }, { status: 401 });
     }
 
-    const url = new URL(request.url);
-    const wantsPartner = url.searchParams.get("profile") === "partner";
-    const linkedPartnerId = await partnerIdFor(profile.id);
-    const ownerId = wantsPartner ? linkedPartnerId : profile.id;
-    if (!ownerId) {
-      return Response.json({ state: null, partner: null });
-    }
-    if (
-      !canAccessState({
-        requesterId: profile.id,
-        ownerId,
-        linkedPartnerId,
-        write: false,
-      })
-    ) {
-      return Response.json({ error: "Доступ запрещён" }, { status: 403 });
-    }
-
     const db = getDb();
-    const [owner] = await db
-      .select()
-      .from(profiles)
-      .where(eq(profiles.id, ownerId))
-      .limit(1);
     const [stored] = await db
       .select()
       .from(userStates)
-      .where(eq(userStates.ownerId, ownerId))
+      .where(eq(userStates.ownerId, profile.id))
       .limit(1);
 
     const state = stored
       ? JSON.parse(stored.payload)
-      : createSeedState(
-          owner?.displayName ?? profile.name,
-          owner?.email ?? profile.email,
-        );
+      : createSeedState(profile.name, profile.email);
 
     return Response.json({
       state,
       updatedAt: stored?.updatedAt ?? null,
-      partner: wantsPartner
-        ? { name: owner?.displayName ?? "Партнёр" }
-        : null,
     });
   } catch (error) {
     return Response.json(
@@ -136,16 +87,6 @@ export async function PUT(request: Request) {
     if (!body.state || !body.operationId) {
       return Response.json({ error: "Некорректные данные" }, { status: 400 });
     }
-    if (
-      !canAccessState({
-        requesterId: profile.id,
-        ownerId: profile.id,
-        write: true,
-      })
-    ) {
-      return Response.json({ error: "Доступ запрещён" }, { status: 403 });
-    }
-
     const db = getDb();
     const [seen] = await db
       .select({ id: syncOperations.id })

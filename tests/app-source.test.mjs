@@ -18,11 +18,14 @@ test("PWA metadata and offline shell are configured", async () => {
   assert.match(layout, /appleWebApp/);
 });
 
-test("partner mode and workout autosave are present", async () => {
+test("personal workout flow and autosave are present", async () => {
   const app = await readFile(new URL("app/WorkoutApp.tsx", root), "utf8");
-  assert.match(app, /Только просмотр/);
+  assert.doesNotMatch(app, /Анна|partnerMode|\/api\/partner/);
   assert.match(app, /indexedDB\.open/);
   assert.match(app, /Без сети — сохраним позже/);
   assert.match(app, /Повторить прошлый подход/);
   assert.match(app, /Следующее упражнение/);
+  assert.match(app, /Удалить упражнение/);
+  assert.match(app, /setDraftWeight\(event\.target\.value\)/);
+  assert.match(app, /setDraftReps\(event\.target\.value\)/);
 });

@@ -9,7 +9,6 @@ import {
 import {
   AppState,
   CardioEntry,
-  createPartnerSeed,
   createSeedState,
   formatDate,
   formatWeight,
@@ -30,7 +29,14 @@ type Overlay =
   | { type: "exercise-menu" }
   | { type: "add-weight" }
   | { type: "add-cardio" }
-  | { type: "confirm"; title: string; text: string; action: () => void };
+  | {
+      type: "confirm";
+      title: string;
+      text: string;
+      action: () => void;
+      confirmLabel?: string;
+      danger?: boolean;
+    };
 type SyncStatus = "saved" | "saving" | "offline" | "error";
 
 type Props = {
@@ -205,38 +211,6 @@ function SyncBadge({ status }: { status: SyncStatus }) {
   );
 }
 
-function ProfileSwitch({
-  partnerMode,
-  partnerName,
-  onChange,
-}: {
-  partnerMode: boolean;
-  partnerName: string;
-  onChange: (partner: boolean) => void;
-}) {
-  return (
-    <div className="profile-switch-wrap">
-      <div className="segmented profile-switch" aria-label="Просматриваемый профиль">
-        <button
-          className={!partnerMode ? "active" : ""}
-          onClick={() => onChange(false)}
-          aria-pressed={!partnerMode}
-        >
-          Мой профиль
-        </button>
-        <button
-          className={partnerMode ? "active partner" : ""}
-          onClick={() => onChange(true)}
-          aria-pressed={partnerMode}
-        >
-          {partnerName}
-        </button>
-      </div>
-      {partnerMode && <span className="readonly-badge">Только просмотр</span>}
-    </div>
-  );
-}
-
 function EmptyState({
   title,
   text,
@@ -365,11 +339,6 @@ export default function WorkoutApp({ viewer }: Props) {
   const [state, setState] = useState<AppState>(() =>
     createSeedState(viewer.name, viewer.email),
   );
-  const [partnerState, setPartnerState] = useState<AppState>(() =>
-    createPartnerSeed(),
-  );
-  const [partnerName, setPartnerName] = useState("Анна");
-  const [partnerMode, setPartnerMode] = useState(false);
   const [view, setView] = useState<MainView>("home");
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [workoutIndex, setWorkoutIndex] = useState(0);
@@ -381,13 +350,12 @@ export default function WorkoutApp({ viewer }: Props) {
   const [hydrated, setHydrated] = useState(false);
   const [period, setPeriod] = useState<"7" | "30" | "all">("30");
   const [selectedExercise, setSelectedExercise] = useState("bench");
-  const [draftWeight, setDraftWeight] = useState(60);
-  const [draftReps, setDraftReps] = useState(10);
+  const [draftWeight, setDraftWeight] = useState("60");
+  const [draftReps, setDraftReps] = useState("10");
   const [notice, setNotice] = useState<string | null>(null);
   const [referenceNow] = useState(() => Date.now());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchDrag = useRef<{ templateId: string; index: number } | null>(null);
-  const readonlyState = partnerMode ? partnerState : state;
 
   const showNotice = useCallback((message: string) => {
     setNotice(message);
@@ -484,29 +452,10 @@ export default function WorkoutApp({ viewer }: Props) {
     }
   }, []);
 
-  const switchProfile = async (partner: boolean) => {
-    setPartnerMode(partner);
-    setView("home");
-    setSummary(null);
-    if (!partner) return;
-    try {
-      const response = await fetch("/api/state?profile=partner");
-      if (!response.ok) return;
-      const data = (await response.json()) as {
-        state?: AppState;
-        partner?: { name: string };
-      };
-      if (data.state) setPartnerState(data.state);
-      if (data.partner?.name) setPartnerName(data.partner.name);
-    } catch {
-      showNotice("Показана последняя сохранённая версия партнёра");
-    }
-  };
-
   const activeTemplate = state.programs
     .find((program) => program.active)
     ?.templates[0];
-  const weekSessions = readonlyState.sessions.filter(
+  const weekSessions = state.sessions.filter(
     (session) =>
       referenceNow -
         new Date(session.completedAt ?? session.startedAt).getTime() <
@@ -517,8 +466,8 @@ export default function WorkoutApp({ viewer }: Props) {
     if (!exercise) return;
     const previous = workoutExerciseHistory(state, exercise.exerciseId);
     const last = exercise.sets.at(-1) ?? previous?.sets.at(-1);
-    setDraftWeight(last?.weight ?? exercise.goal?.weight ?? 20);
-    setDraftReps(last?.reps ?? exercise.goal?.reps ?? 10);
+    setDraftWeight(String(last?.weight ?? exercise.goal?.weight ?? 20));
+    setDraftReps(String(last?.reps ?? exercise.goal?.reps ?? 10));
   };
 
   const beginWorkout = (templateId?: string) => {
@@ -570,8 +519,22 @@ export default function WorkoutApp({ viewer }: Props) {
 
   const currentWorkoutExercise = state.activeSession?.exercises[workoutIndex];
 
-  const addSet = (weight = draftWeight, reps = draftReps) => {
-    if (!currentWorkoutExercise || weight <= 0 || reps < 0) {
+  const addSet = (weightValue?: number, repsValue?: number) => {
+    const weight =
+      weightValue ?? Number(draftWeight.trim().replace(",", "."));
+    const reps = repsValue ?? Number(draftReps.trim());
+    const hasEmptyDraft =
+      weightValue === undefined &&
+      repsValue === undefined &&
+      (!draftWeight.trim() || !draftReps.trim());
+    if (
+      !currentWorkoutExercise ||
+      hasEmptyDraft ||
+      !Number.isFinite(weight) ||
+      !Number.isFinite(reps) ||
+      weight <= 0 ||
+      reps < 0
+    ) {
       showNotice("Проверьте вес и количество повторений");
       return;
     }
@@ -602,6 +565,8 @@ export default function WorkoutApp({ viewer }: Props) {
       type: "confirm",
       title: "Удалить подход?",
       text: "Подход исчезнет из текущей тренировки.",
+      confirmLabel: "Удалить подход",
+      danger: true,
       action: () => {
         updateActiveSession((session) => ({
           ...session,
@@ -692,6 +657,8 @@ export default function WorkoutApp({ viewer }: Props) {
       type: "confirm",
       title: "Удалить тренировку?",
       text: "История и личные рекорды будут пересчитаны.",
+      confirmLabel: "Удалить тренировку",
+      danger: true,
       action: () => {
         setState((current) => ({
           ...current,
@@ -725,6 +692,39 @@ export default function WorkoutApp({ viewer }: Props) {
       })),
     }));
   };
+
+  const deleteTemplateExercise = (
+    templateId: string,
+    templateExerciseId: string,
+    exerciseName: string,
+  ) =>
+    setOverlay({
+      type: "confirm",
+      title: `Удалить «${exerciseName}»?`,
+      text: "Упражнение исчезнет из этого шаблона. Уже сохранённые тренировки и статистика останутся без изменений.",
+      confirmLabel: "Удалить упражнение",
+      danger: true,
+      action: () => {
+        setState((current) => ({
+          ...current,
+          programs: current.programs.map((program) => ({
+            ...program,
+            templates: program.templates.map((template) =>
+              template.id === templateId
+                ? {
+                    ...template,
+                    exercises: template.exercises.filter(
+                      (item) => item.id !== templateExerciseId,
+                    ),
+                  }
+                : template,
+            ),
+          })),
+        }));
+        setOverlay(null);
+        showNotice("Упражнение удалено из программы");
+      },
+    });
 
   const addBodyWeight = (weight: number, date: string) => {
     if (weight <= 0 || weight > 500) {
@@ -897,9 +897,7 @@ export default function WorkoutApp({ viewer }: Props) {
                     inputMode="decimal"
                     step="0.5"
                     min="0.5"
-                    onChange={(event) =>
-                      setDraftWeight(Number(event.target.value))
-                    }
+                    onChange={(event) => setDraftWeight(event.target.value)}
                   />
                   <i>кг</i>
                 </span>
@@ -916,9 +914,7 @@ export default function WorkoutApp({ viewer }: Props) {
                     inputMode="numeric"
                     step="1"
                     min="0"
-                    onChange={(event) =>
-                      setDraftReps(Number(event.target.value))
-                    }
+                    onChange={(event) => setDraftReps(event.target.value)}
                   />
                   <i>раз</i>
                 </span>
@@ -931,9 +927,16 @@ export default function WorkoutApp({ viewer }: Props) {
                   <button
                     key={delta}
                     onClick={() =>
-                      setDraftWeight((weight) =>
-                        Math.max(0.5, Math.round((weight + delta) * 2) / 2),
-                      )
+                      setDraftWeight((current) => {
+                        const parsed = Number(current.replace(",", "."));
+                        const weight = Number.isFinite(parsed) ? parsed : 0;
+                        return String(
+                          Math.max(
+                            0.5,
+                            Math.round((weight + delta) * 2) / 2,
+                          ),
+                        );
+                      })
                     }
                   >
                     {delta > 0 ? "+" : "−"}
@@ -1084,15 +1087,15 @@ export default function WorkoutApp({ viewer }: Props) {
   }
 
   function renderHome() {
-    const lastWeight = readonlyState.bodyWeights[0]?.weight;
-    const firstWeight = readonlyState.bodyWeights.at(-1)?.weight;
+    const lastWeight = state.bodyWeights[0]?.weight;
+    const firstWeight = state.bodyWeights.at(-1)?.weight;
     return (
       <>
         <header className="home-header">
-          <div className="avatar">{readonlyState.profile.name.slice(0, 1)}</div>
+          <div className="avatar">{state.profile.name.slice(0, 1)}</div>
           <div>
             <span>Доброе утро</span>
-            <h1>{readonlyState.profile.name}</h1>
+            <h1>{state.profile.name}</h1>
           </div>
           <button
             className="round-button"
@@ -1102,44 +1105,29 @@ export default function WorkoutApp({ viewer }: Props) {
             ≡
           </button>
         </header>
-        <ProfileSwitch
-          partnerMode={partnerMode}
-          partnerName={partnerName}
-          onChange={switchProfile}
-        />
-
-        {!partnerMode && (
-          <section className="hero-card">
-            <span>{state.activeSession ? "Продолжить" : "Сегодня"}</span>
-            <h2>{state.activeSession?.name ?? activeTemplate?.name ?? "Тренировка"}</h2>
-            <p>
-              {state.activeSession
-                ? `${state.activeSession.exercises.filter((item) => item.completed).length} из ${state.activeSession.exercises.length} выполнено`
-                : `${activeTemplate?.exercises.length ?? 0} упражнений · около 60 мин`}
-            </p>
-            <div className="hero-mark" aria-hidden="true">
-              Ж
-            </div>
-            <button
-              className="hero-action"
-              onClick={() =>
-                state.activeSession
-                  ? beginWorkout(state.activeSession.templateId)
-                  : setOverlay({ type: "templates" })
-              }
-            >
-              {state.activeSession ? "Продолжить тренировку" : "Начать тренировку"}
-              <span aria-hidden="true">→</span>
-            </button>
-          </section>
-        )}
-        {partnerMode && (
-          <section className="partner-banner">
-            <span className="readonly-badge">Только просмотр</span>
-            <h2>Результаты {partnerName}</h2>
-            <p>Незавершённые тренировки и действия редактирования скрыты.</p>
-          </section>
-        )}
+        <section className="hero-card">
+          <span>{state.activeSession ? "Продолжить" : "Сегодня"}</span>
+          <h2>{state.activeSession?.name ?? activeTemplate?.name ?? "Тренировка"}</h2>
+          <p>
+            {state.activeSession
+              ? `${state.activeSession.exercises.filter((item) => item.completed).length} из ${state.activeSession.exercises.length} выполнено`
+              : `${activeTemplate?.exercises.length ?? 0} упражнений · около 60 мин`}
+          </p>
+          <div className="hero-mark" aria-hidden="true">
+            Ж
+          </div>
+          <button
+            className="hero-action"
+            onClick={() =>
+              state.activeSession
+                ? beginWorkout(state.activeSession.templateId)
+                : setOverlay({ type: "templates" })
+            }
+          >
+            {state.activeSession ? "Продолжить тренировку" : "Начать тренировку"}
+            <span aria-hidden="true">→</span>
+          </button>
+        </section>
 
         <div className="dashboard-grid">
           <article className="metric-card blue-card">
@@ -1166,7 +1154,7 @@ export default function WorkoutApp({ viewer }: Props) {
                 : "Нет данных"}
             </strong>
             <div className="sparkline" aria-hidden="true">
-              {readonlyState.bodyWeights
+              {state.bodyWeights
                 .slice(0, 5)
                 .reverse()
                 .map((item, index) => (
@@ -1189,9 +1177,9 @@ export default function WorkoutApp({ viewer }: Props) {
               Все
             </button>
           </div>
-          {readonlyState.sessions.length ? (
+          {state.sessions.length ? (
             <div className="list-card">
-              {readonlyState.sessions.slice(0, 3).map((session) => (
+              {state.sessions.slice(0, 3).map((session) => (
                 <button
                   className="workout-list-row"
                   key={session.id}
@@ -1227,14 +1215,6 @@ export default function WorkoutApp({ viewer }: Props) {
   }
 
   function renderPrograms() {
-    if (partnerMode) {
-      return (
-        <EmptyState
-          title="Программы доступны только владельцу"
-          text="В режиме партнёра можно смотреть завершённые результаты и прогресс."
-        />
-      );
-    }
     return (
       <>
         <header className="page-header">
@@ -1393,6 +1373,19 @@ export default function WorkoutApp({ viewer }: Props) {
                           >
                             ↓
                           </button>
+                          <button
+                            className="delete-exercise-button"
+                            aria-label={`Удалить упражнение «${exercise?.name ?? "Упражнение"}» из шаблона`}
+                            onClick={() =>
+                              deleteTemplateExercise(
+                                template.id,
+                                item.id,
+                                exercise?.name ?? "Упражнение",
+                              )
+                            }
+                          >
+                            ×
+                          </button>
                         </span>
                       </div>
                     );
@@ -1472,11 +1465,11 @@ export default function WorkoutApp({ viewer }: Props) {
   }
 
   function renderProgress() {
-    const exercise = readonlyState.exercises.find(
+    const exercise = state.exercises.find(
       (item) => item.id === selectedExercise,
     );
     const days = period === "7" ? 7 : period === "30" ? 30 : Infinity;
-    const points = readonlyState.sessions
+    const points = state.sessions
       .filter(
         (session) =>
           referenceNow -
@@ -1494,9 +1487,9 @@ export default function WorkoutApp({ viewer }: Props) {
       .sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
       );
-    const records = personalRecords(readonlyState.sessions, selectedExercise);
-    const currentWeight = readonlyState.bodyWeights[0];
-    const cardioMinutes = readonlyState.cardio
+    const records = personalRecords(state.sessions, selectedExercise);
+    const currentWeight = state.bodyWeights[0];
+    const cardioMinutes = state.cardio
       .filter(
         (entry) =>
           referenceNow - new Date(entry.date).getTime() < 30 * 86400000,
@@ -1506,24 +1499,17 @@ export default function WorkoutApp({ viewer }: Props) {
       <>
         <header className="page-header">
           <div>
-            <span className="eyebrow">
-              {partnerMode ? `Результаты ${partnerName}` : "Ваши результаты"}
-            </span>
+            <span className="eyebrow">Ваши результаты</span>
             <h1>Прогресс</h1>
           </div>
         </header>
-        <ProfileSwitch
-          partnerMode={partnerMode}
-          partnerName={partnerName}
-          onChange={switchProfile}
-        />
         <label className="select-field">
           <span>Упражнение</span>
           <select
             value={selectedExercise}
             onChange={(event) => setSelectedExercise(event.target.value)}
           >
-            {readonlyState.exercises
+            {state.exercises
               .filter((item) => !item.archived)
               .map((item) => (
                 <option key={item.id} value={item.id}>
@@ -1620,14 +1606,12 @@ export default function WorkoutApp({ viewer }: Props) {
             title="Пока недостаточно данных"
             text={`Завершите тренировку с упражнением «${exercise?.name ?? "Упражнение"}», чтобы увидеть динамику.`}
             action={
-              !partnerMode ? (
-                <button
-                  className="secondary-button compact"
-                  onClick={() => setOverlay({ type: "templates" })}
-                >
-                  Начать тренировку
-                </button>
-              ) : undefined
+              <button
+                className="secondary-button compact"
+                onClick={() => setOverlay({ type: "templates" })}
+              >
+                Начать тренировку
+              </button>
             }
           />
         )}
@@ -1635,14 +1619,12 @@ export default function WorkoutApp({ viewer }: Props) {
         <section className="card health-card">
           <div className="section-title-row">
             <h2>Масса тела</h2>
-            {!partnerMode && (
-              <button
-                className="text-button"
-                onClick={() => setOverlay({ type: "add-weight" })}
-              >
-                Добавить
-              </button>
-            )}
+            <button
+              className="text-button"
+              onClick={() => setOverlay({ type: "add-weight" })}
+            >
+              Добавить
+            </button>
           </div>
           {currentWeight ? (
             <>
@@ -1650,7 +1632,7 @@ export default function WorkoutApp({ viewer }: Props) {
                 {formatWeight(currentWeight.weight)} кг
               </strong>
               <Chart
-                values={readonlyState.bodyWeights
+                values={state.bodyWeights
                   .slice(0, 8)
                   .reverse()
                   .map((entry) => entry.weight)}
@@ -1666,19 +1648,17 @@ export default function WorkoutApp({ viewer }: Props) {
         <section className="card health-card">
           <div className="section-title-row">
             <h2>Кардио</h2>
-            {!partnerMode && (
-              <button
-                className="text-button"
-                onClick={() => setOverlay({ type: "add-cardio" })}
-              >
-                Добавить
-              </button>
-            )}
+            <button
+              className="text-button"
+              onClick={() => setOverlay({ type: "add-cardio" })}
+            >
+              Добавить
+            </button>
           </div>
           <strong className="health-value">{cardioMinutes} мин</strong>
           <p>за последние 30 дней</p>
           <div className="compact-history">
-            {readonlyState.cardio.slice(0, 3).map((entry) => (
+            {state.cardio.slice(0, 3).map((entry) => (
               <div key={entry.id}>
                 <MetricIcon tone="cyan">◷</MetricIcon>
                 <span>
@@ -1702,7 +1682,7 @@ export default function WorkoutApp({ viewer }: Props) {
       <>
         <header className="page-header">
           <div>
-            <span className="eyebrow">Аккаунт и доступ</span>
+            <span className="eyebrow">Личные данные</span>
             <h1>Профиль</h1>
           </div>
           <div className="avatar large">{state.profile.name.slice(0, 1)}</div>
@@ -1720,58 +1700,6 @@ export default function WorkoutApp({ viewer }: Props) {
             <span>Единицы</span>
             <strong>кг · км</strong>
           </div>
-        </section>
-        <section className="card partner-card">
-          <MetricIcon tone="violet">2</MetricIcon>
-          <h2>Партнёр</h2>
-          <p>
-            Свяжите два профиля кодом. Каждый видит завершённые результаты
-            другого, но не может их менять.
-          </p>
-          <button
-            className="secondary-button"
-            onClick={async () => {
-              try {
-                const response = await fetch("/api/partner", {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ action: "create" }),
-                });
-                const data = (await response.json()) as {
-                  partnership?: { inviteCode?: string };
-                };
-                if (data.partnership?.inviteCode) {
-                  showNotice(`Код приглашения: ${data.partnership.inviteCode}`);
-                } else {
-                  showNotice("Партнёр уже связан");
-                }
-              } catch {
-                showNotice("Демо-код: FAMILY");
-              }
-            }}
-          >
-            Создать код приглашения
-          </button>
-          <button
-            className="text-button wide"
-            onClick={async () => {
-              const code = window.prompt("Введите код приглашения");
-              if (!code) return;
-              try {
-                const response = await fetch("/api/partner", {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ action: "accept", code }),
-                });
-                if (!response.ok) throw new Error("accept failed");
-                showNotice("Профили связаны");
-              } catch {
-                showNotice("Не удалось принять приглашение");
-              }
-            }}
-          >
-            Ввести код партнёра
-          </button>
         </section>
         <section className="card install-card">
           <MetricIcon tone="yellow">↗</MetricIcon>
@@ -1819,8 +1747,11 @@ export default function WorkoutApp({ viewer }: Props) {
             <span className="sheet-handle" />
             <h2>{overlay.title}</h2>
             <p>{overlay.text}</p>
-            <button className="primary-button" onClick={overlay.action}>
-              Продолжить
+            <button
+              className={overlay.danger ? "danger-button" : "primary-button"}
+              onClick={overlay.action}
+            >
+              {overlay.confirmLabel ?? "Продолжить"}
             </button>
             <button
               className="secondary-button"
@@ -1970,14 +1901,12 @@ export default function WorkoutApp({ viewer }: Props) {
                 </article>
               );
             })}
-            {!partnerMode && (
-              <button
-                className="danger-button"
-                onClick={() => deleteSession(session.id)}
-              >
-                Удалить тренировку
-              </button>
-            )}
+            <button
+              className="danger-button"
+              onClick={() => deleteSession(session.id)}
+            >
+              Удалить тренировку
+            </button>
           </section>
         </div>
       );

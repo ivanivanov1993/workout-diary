@@ -205,10 +205,6 @@ h3 {
   background: var(--color-yellow);
 }
 
-.profile-switch-wrap {
-  margin-bottom: 18px;
-}
-
 .segmented {
   display: grid;
   height: 44px;
@@ -235,15 +231,6 @@ h3 {
   color: var(--color-text-primary);
 }
 
-.segmented button.active.partner {
-  background: var(--color-violet-soft);
-}
-
-.profile-switch {
-  grid-template-columns: 1fr 1fr;
-}
-
-.readonly-badge,
 .record-badge,
 .count-badge {
   display: inline-flex;
@@ -255,10 +242,6 @@ h3 {
   color: #5846bd;
   font-size: 11px;
   font-weight: 650;
-}
-
-.profile-switch-wrap > .readonly-badge {
-  margin-top: 8px;
 }
 
 .hero-card {
@@ -325,25 +308,6 @@ h3 {
 
 .hero-action span {
   font-size: 26px;
-}
-
-.partner-banner {
-  margin-bottom: 16px;
-  padding: 20px;
-  border: 1px solid #dcd3ff;
-  border-radius: var(--radius-xl);
-  background: var(--color-violet-soft);
-}
-
-.partner-banner h2 {
-  margin: 14px 0 6px;
-}
-
-.partner-banner p {
-  margin-bottom: 0;
-  color: #5f567d;
-  font-size: 14px;
-  line-height: 20px;
 }
 
 .dashboard-grid,
@@ -772,6 +736,13 @@ h3 {
   background: white;
 }
 
+.move-actions .delete-exercise-button {
+  width: 44px;
+  min-width: 44px;
+  color: var(--color-coral);
+  font-size: 20px;
+}
+
 .primary-button,
 .secondary-button,
 .danger-button {
@@ -1079,21 +1050,18 @@ h3 {
   white-space: nowrap;
 }
 
-.partner-card,
 .install-card,
 .card {
   margin-bottom: 14px;
   padding: 16px;
 }
 
-.partner-card h2,
 .install-card h2,
 .card h2 {
   margin: 12px 0 7px;
   font-size: 18px;
 }
 
-.partner-card p,
 .install-card li,
 .card p {
   color: var(--color-text-secondary);

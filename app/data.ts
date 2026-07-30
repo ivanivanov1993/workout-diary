@@ -282,20 +282,6 @@ export function createSeedState(
   };
 }
 
-export function createPartnerSeed(): AppState {
-  const state = createSeedState("Анна", "anna@local");
-  state.bodyWeights = [
-    { id: "aw1", date: at(28), weight: 61.8 },
-    { id: "aw2", date: at(0), weight: 60.9 },
-  ];
-  state.sessions = state.sessions.slice(0, 3).map((session, index) => ({
-    ...session,
-    id: `anna-${session.id}`,
-    name: index === 0 ? "Ноги и ягодицы" : session.name,
-  }));
-  return state;
-}
-
 export const makeId = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 

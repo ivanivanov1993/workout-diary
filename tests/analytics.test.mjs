@@ -6,7 +6,6 @@ import {
   personalRecords,
   qualifiesForThreeWeekHint,
 } from "../lib/analytics.mjs";
-import { canAccessState } from "../lib/access.mjs";
 
 test("calculates sets, repetitions, maximum weight and volume", () => {
   const result = exerciseMetrics([
@@ -89,43 +88,5 @@ test("offline queue is idempotent by operation id", () => {
       { id: "a", createdAt: 3 },
     ]).map((item) => item.id),
     ["a", "b"],
-  );
-});
-
-test("owner can write, partner can only read, outsider has no access", () => {
-  assert.equal(
-    canAccessState({
-      requesterId: "owner",
-      ownerId: "owner",
-      write: true,
-    }),
-    true,
-  );
-  assert.equal(
-    canAccessState({
-      requesterId: "partner",
-      ownerId: "owner",
-      linkedPartnerId: "owner",
-      write: false,
-    }),
-    true,
-  );
-  assert.equal(
-    canAccessState({
-      requesterId: "partner",
-      ownerId: "owner",
-      linkedPartnerId: "owner",
-      write: true,
-    }),
-    false,
-  );
-  assert.equal(
-    canAccessState({
-      requesterId: "outsider",
-      ownerId: "owner",
-      linkedPartnerId: null,
-      write: false,
-    }),
-    false,
   );
 });

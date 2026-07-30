@@ -13,24 +13,6 @@ export const profiles = sqliteTable(
   (table) => [uniqueIndex("profiles_email_idx").on(table.email)],
 );
 
-export const partnerships = sqliteTable(
-  "partnerships",
-  {
-    id: text("id").primaryKey(),
-    inviterId: text("inviter_id").notNull(),
-    partnerId: text("partner_id"),
-    inviteCode: text("invite_code").notNull(),
-    status: text("status").notNull().default("pending"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [
-    uniqueIndex("partnership_invite_code_idx").on(table.inviteCode),
-    index("partnership_inviter_idx").on(table.inviterId),
-    index("partnership_partner_idx").on(table.partnerId),
-  ],
-);
-
 export const userStates = sqliteTable(
   "user_states",
   {
