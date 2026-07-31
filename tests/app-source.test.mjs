@@ -35,6 +35,10 @@ test("personal workout flow, onboarding and hybrid storage are present", async (
   assert.match(app, /Повторить прошлый подход/);
   assert.match(app, /Следующее упражнение/);
   assert.match(app, /Удалить упражнение/);
+  assert.match(app, /Удалить шаблон/);
+  assert.match(app, /День недели для шаблона/);
+  assert.match(app, /exerciseIdsFromPrograms\(state\.programs\)/);
+  assert.match(app, /Упражнение из программы/);
   assert.match(app, /setDraftWeight\(event\.target\.value\)/);
   assert.match(app, /setDraftReps\(event\.target\.value\)/);
   assert.match(page, /local@device/);

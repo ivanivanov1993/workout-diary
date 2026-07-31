@@ -1,11 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  exerciseIdsFromPrograms,
   exerciseMetrics,
   mergeQueuedOperations,
   personalRecords,
   qualifiesForThreeWeekHint,
 } from "../lib/analytics.mjs";
+
+test("lists only unique exercises that are used in programs", () => {
+  const ids = exerciseIdsFromPrograms([
+    {
+      templates: [
+        {
+          exercises: [
+            { exerciseId: "bench" },
+            { exerciseId: "row" },
+          ],
+        },
+        {
+          exercises: [
+            { exerciseId: "bench" },
+            { exerciseId: "squat" },
+          ],
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(ids, ["bench", "row", "squat"]);
+});
 
 test("calculates sets, repetitions, maximum weight and volume", () => {
   const result = exerciseMetrics([

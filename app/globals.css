@@ -763,10 +763,80 @@ h3 {
   background: var(--color-bg-subtle);
 }
 
+.template-title {
+  flex: 1;
+}
+
+.template-day-field {
+  display: block;
+  max-width: 172px;
+}
+
+.template-day-field > span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.template-day-field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: white;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .count-badge {
   align-self: start;
   background: var(--color-blue-soft);
   color: var(--color-blue-strong) !important;
+}
+
+.template-delete-action {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #b63e3a;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.template-delete-action:hover {
+  background: #fbe3e1;
+}
+
+.template-delete-action > span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.program-empty-state {
+  display: grid;
+  gap: 4px;
+  margin: 16px 0;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.program-empty-state strong {
+  font-size: 14px;
+}
+
+.program-empty-state span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 .exercise-editor-list {

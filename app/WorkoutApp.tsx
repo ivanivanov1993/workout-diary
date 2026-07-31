@@ -17,6 +17,7 @@ import {
   WorkoutSession,
 } from "./data";
 import {
+  exerciseIdsFromPrograms,
   exerciseMetrics,
   personalRecords,
 } from "@/lib/analytics.mjs";
@@ -46,6 +47,15 @@ type Props = {
 const DB_NAME = "training-diary";
 const LEGACY_STATE_KEY = "latest-state";
 const LOCAL_STATE_KEY = "latest-state:local";
+const WEEKDAYS = [
+  "Понедельник",
+  "Вторник",
+  "Среда",
+  "Четверг",
+  "Пятница",
+  "Суббота",
+  "Воскресенье",
+];
 
 async function openLocalDb() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -888,6 +898,50 @@ export default function WorkoutApp({ viewer }: Props) {
       },
     });
 
+  const updateTemplateDay = (templateId: string, day: string) => {
+    setState((current) => ({
+      ...current,
+      programs: current.programs.map((program) => ({
+        ...program,
+        templates: program.templates.map((template) =>
+          template.id === templateId
+            ? { ...template, day: day || undefined }
+            : template,
+        ),
+      })),
+    }));
+  };
+
+  const deleteTemplate = (
+    programId: string,
+    templateId: string,
+    templateName: string,
+  ) =>
+    setOverlay({
+      type: "confirm",
+      title: `Удалить шаблон «${templateName}»?`,
+      text: "Шаблон исчезнет из программы. Активная тренировка, история и статистика останутся без изменений.",
+      confirmLabel: "Удалить шаблон",
+      danger: true,
+      action: () => {
+        setState((current) => ({
+          ...current,
+          programs: current.programs.map((program) =>
+            program.id === programId
+              ? {
+                  ...program,
+                  templates: program.templates.filter(
+                    (template) => template.id !== templateId,
+                  ),
+                }
+              : program,
+          ),
+        }));
+        setOverlay(null);
+        showNotice("Шаблон удалён");
+      },
+    });
+
   const addBodyWeight = (weight: number, date: string) => {
     if (weight <= 0 || weight > 500) {
       showNotice("Укажите корректную массу");
@@ -1431,11 +1485,33 @@ export default function WorkoutApp({ viewer }: Props) {
                 </button>
               )}
             </div>
+            {!program.templates.length && (
+              <div className="program-empty-state">
+                <strong>Шаблонов пока нет</strong>
+                <span>Создайте шаблон и добавьте упражнения.</span>
+              </div>
+            )}
             {program.templates.map((template) => (
               <article className="template-card" key={template.id}>
                 <div className="template-heading">
-                  <div>
-                    <span>{template.day ?? "Без дня"}</span>
+                  <div className="template-title">
+                    <label className="template-day-field">
+                      <span>День недели</span>
+                      <select
+                        aria-label={`День недели для шаблона «${template.name}»`}
+                        value={template.day ?? ""}
+                        onChange={(event) =>
+                          updateTemplateDay(template.id, event.target.value)
+                        }
+                      >
+                        <option value="">Без дня</option>
+                        {WEEKDAYS.map((day) => (
+                          <option key={day} value={day}>
+                            {day}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <h3>{template.name}</h3>
                   </div>
                   <span className="count-badge">
@@ -1591,6 +1667,16 @@ export default function WorkoutApp({ viewer }: Props) {
                 >
                   + Добавить упражнение
                 </button>
+                <button
+                  className="template-delete-action"
+                  aria-label={`Удалить шаблон «${template.name}»`}
+                  onClick={() =>
+                    deleteTemplate(program.id, template.id, template.name)
+                  }
+                >
+                  <span aria-hidden="true">×</span>
+                  Удалить шаблон
+                </button>
               </article>
             ))}
             <button
@@ -1627,8 +1713,19 @@ export default function WorkoutApp({ viewer }: Props) {
   }
 
   function renderProgress() {
-    const exercise = state.exercises.find(
+    const programExerciseIds = new Set(
+      exerciseIdsFromPrograms(state.programs),
+    );
+    const progressExercises = state.exercises.filter(
+      (item) => !item.archived && programExerciseIds.has(item.id),
+    );
+    const progressExerciseId = progressExercises.some(
       (item) => item.id === selectedExercise,
+    )
+      ? selectedExercise
+      : (progressExercises[0]?.id ?? "");
+    const exercise = state.exercises.find(
+      (item) => item.id === progressExerciseId,
     );
     const days = period === "7" ? 7 : period === "30" ? 30 : Infinity;
     const points = state.sessions
@@ -1640,7 +1737,7 @@ export default function WorkoutApp({ viewer }: Props) {
       )
       .flatMap((session) =>
         session.exercises
-          .filter((item) => item.exerciseId === selectedExercise)
+          .filter((item) => item.exerciseId === progressExerciseId)
           .map((item) => ({
             date: session.completedAt ?? session.startedAt,
             metrics: exerciseMetrics(item.sets),
@@ -1649,7 +1746,7 @@ export default function WorkoutApp({ viewer }: Props) {
       .sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
       );
-    const records = personalRecords(state.sessions, selectedExercise);
+    const records = personalRecords(state.sessions, progressExerciseId);
     const currentWeight = state.bodyWeights[0];
     const cardioMinutes = state.cardio
       .filter(
@@ -1665,39 +1762,39 @@ export default function WorkoutApp({ viewer }: Props) {
             <h1>Прогресс</h1>
           </div>
         </header>
-        <label className="select-field">
-          <span>Упражнение</span>
-          <select
-            value={selectedExercise}
-            onChange={(event) => setSelectedExercise(event.target.value)}
-          >
-            {state.exercises
-              .filter((item) => !item.archived)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <div className="segmented period-switch">
-          {[
-            ["7", "7 дней"],
-            ["30", "30 дней"],
-            ["all", "Всё время"],
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              className={period === value ? "active" : ""}
-              onClick={() => setPeriod(value as typeof period)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {points.length ? (
+        {progressExercises.length ? (
           <>
+            <label className="select-field">
+              <span>Упражнение из программы</span>
+              <select
+                value={progressExerciseId}
+                onChange={(event) => setSelectedExercise(event.target.value)}
+              >
+                {progressExercises.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="segmented period-switch">
+              {[
+                ["7", "7 дней"],
+                ["30", "30 дней"],
+                ["all", "Всё время"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  className={period === value ? "active" : ""}
+                  onClick={() => setPeriod(value as typeof period)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {points.length ? (
+              <>
             <div className="summary-grid">
               <article className="soft-card blue">
                 <MetricIcon tone="blue">↑</MetricIcon>
@@ -1762,17 +1859,32 @@ export default function WorkoutApp({ viewer }: Props) {
                 label={`Объём для упражнения ${exercise?.name ?? ""}`}
               />
             </article>
+              </>
+            ) : (
+              <EmptyState
+                title="Пока недостаточно данных"
+                text={`Завершите тренировку с упражнением «${exercise?.name ?? "Упражнение"}», чтобы увидеть динамику.`}
+                action={
+                  <button
+                    className="secondary-button compact"
+                    onClick={() => setOverlay({ type: "templates" })}
+                  >
+                    Начать тренировку
+                  </button>
+                }
+              />
+            )}
           </>
         ) : (
           <EmptyState
-            title="Пока недостаточно данных"
-            text={`Завершите тренировку с упражнением «${exercise?.name ?? "Упражнение"}», чтобы увидеть динамику.`}
+            title="В программах пока нет упражнений"
+            text="Добавьте упражнение в шаблон программы — после этого оно появится в выборе статистики."
             action={
               <button
                 className="secondary-button compact"
-                onClick={() => setOverlay({ type: "templates" })}
+                onClick={() => setView("programs")}
               >
-                Начать тренировку
+                Открыть программы
               </button>
             }
           />
